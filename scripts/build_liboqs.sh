@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# build_liboqs.sh — compila liboqs, libkat_entropy.so y los harnesses nativos
-#
-# Uso:
-#   ./scripts/build_liboqs.sh
-#
-# Resultado:
-#   build/liboqs/              → instalación de liboqs (headers + .so)
-#   native/build/libkat_entropy.so
-#   native/build/liboqs/kem_harness
-#   native/build/liboqs/sig_harness
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

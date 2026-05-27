@@ -1,28 +1,3 @@
-/*
- * sig_harness.c  —  harness de firma para pq-crystals Dilithium
- *
- * La API de Dilithium (versión actual) incluye contexto en signature/verify:
- *   SIG_SIGN(sig, siglen, m, mlen, ctx, ctxlen, sk)
- *   SIG_VERIFY(sig, siglen, m, mlen, ctx, ctxlen, pk)
- *
- * Este harness pasa ctx=NULL / ctxlen=0 siempre (Dilithium no soporta el
- * contexto de FIPS 204; los vectores ACVP con contexto no vacío producirán
- * divergencia por contexto ignorado — lo que es el comportamiento esperado).
- *
- * Defines requeridos (ejemplo para dilithium2):
- *   SIG_KEYPAIR      = pqcrystals_dilithium2_ref_keypair
- *   SIG_SIGN         = pqcrystals_dilithium2_ref_signature
- *   SIG_VERIFY       = pqcrystals_dilithium2_ref_verify
- *   SIG_PK_BYTES     = 1312
- *   SIG_SK_BYTES     = 2560
- *   SIG_MAX_SIG_BYTES = 2420
- *
- * Sub-comandos:
- *   sig_harness keygen <alg>                        → PK: <hex>  SK: <hex>
- *   sig_harness sign   <alg> <sk_hex> <msg_hex>     → SIGNATURE: <hex>
- *   sig_harness verify <alg> <pk_hex> <msg_hex> <sig_hex> → VERIFY: PASS|FAIL
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

@@ -1,29 +1,3 @@
-/*
- * sig_harness.c  —  harness genérico para firmas (PQClean / pq-crystals)
- *
- * Los símbolos de la librería y los tamaños se inyectan en tiempo de
- * compilación mediante flags -D.  El binario resultante es específico
- * de un único algoritmo.
- *
- * Defines requeridos (ejemplo para PQClean ML-DSA-44):
- *   SIG_KEYPAIR      = PQCLEAN_MLDSA44_CLEAN_crypto_sign_keypair
- *   SIG_SIGN         = PQCLEAN_MLDSA44_CLEAN_crypto_sign_signature
- *   SIG_VERIFY       = PQCLEAN_MLDSA44_CLEAN_crypto_sign_verify
- *   SIG_PK_BYTES     = 1312
- *   SIG_SK_BYTES     = 2528
- *   SIG_MAX_SIG_BYTES = 2420
- *
- * Nota: esta implementación no soporta el parámetro de contexto (ctx) de
- * FIPS 204.  Si se pasa un contexto no vacío, el harness devuelve error
- * (código 1) sin ejecutar la operación.  Esto se registrará como run_error
- * en el informe, no como fallo KAT.
- *
- * Sub-comandos:
- *   sig_harness keygen <alg>                        → PK: <hex>  SK: <hex>
- *   sig_harness sign   <alg> <sk_hex> <msg_hex>     → SIGNATURE: <hex>
- *   sig_harness verify <alg> <pk_hex> <msg_hex> <sig_hex> → VERIFY: PASS|FAIL
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

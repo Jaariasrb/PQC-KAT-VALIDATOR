@@ -1,25 +1,3 @@
-/*
- * kat_entropy.c
- *
- * Librería LD_PRELOAD que intercepta las llamadas al RNG del sistema operativo
- * y las sustituye por los bytes de la semilla KAT del NIST.
- *
- * Uso:
- *   LD_PRELOAD=libkat_entropy.so KAT_SEED_FILE=/tmp/seed.bin ./kem_harness keygen ML-KEM-768
- *
- * Funciones interceptadas:
- *   randombytes(buf, n)        — API histórica de los KAT del NIST
- *   getrandom(buf, n, flags)   — llamada estándar del kernel de Linux
- *   getentropy(buf, n)         — la que usa liboqs (OQS_randombytes_system)
- *
- * Modelo SECUENCIAL:
- *   El fichero de semilla es la concatenación exacta de la aleatoriedad que el
- *   algoritmo consume, en orden. Un offset global avanza con cada llamada:
- *   la 1ª lectura toma los bytes [0, n), la 2ª toma [n, 2n), etc. Así keygen
- *   puede pedir aleatoriedad varias veces (p. ej. d y luego z) y cada llamada
- *   recibe el bloque correcto en lugar de releer siempre desde el principio.
- */
-
 #define _GNU_SOURCE
 
 #include <stdio.h>

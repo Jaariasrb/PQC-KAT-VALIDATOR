@@ -1,15 +1,4 @@
 #!/usr/bin/env bash
-# fetch_kats.sh — copia los vectores KAT (formato ACVP) del NIST a kat_vectors/
-#
-# Uso:
-#   ./scripts/fetch_kats.sh [directorio_destino]
-#
-# Por defecto copia en: kat_vectors/
-#
-# Fuente: los vectores ACVP oficiales (FIPS 203/204/205) vienen incluidos en el
-# código fuente de liboqs, que build_liboqs.sh clona en build/liboqs-src/.
-# Cada algoritmo aporta varios directorios con un fichero internalProjection.json.
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

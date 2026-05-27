@@ -1,25 +1,3 @@
-/*
- * kem_harness.c  —  harness genérico para KEM (PQClean / pq-crystals)
- *
- * Los símbolos de la librería y los tamaños se inyectan en tiempo de
- * compilación mediante flags -D.  El binario resultante es específico
- * de un único algoritmo (el argv[2] se ignora).
- *
- * Defines requeridos (ejemplo para PQClean ML-KEM-512):
- *   KEM_KEYPAIR  = PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair
- *   KEM_ENC      = PQCLEAN_MLKEM512_CLEAN_crypto_kem_enc
- *   KEM_DEC      = PQCLEAN_MLKEM512_CLEAN_crypto_kem_dec
- *   KEM_PK_BYTES = 800
- *   KEM_SK_BYTES = 1632
- *   KEM_CT_BYTES = 768
- *   KEM_SS_BYTES = 32
- *
- * Sub-comandos (igual que el harness de liboqs):
- *   kem_harness keygen <alg>                  → EK: <hex>  DK: <hex>
- *   kem_harness encaps <alg> <ek_hex>         → C: <hex>   K: <hex>
- *   kem_harness decaps <alg> <dk_hex> <c_hex> → K: <hex>
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

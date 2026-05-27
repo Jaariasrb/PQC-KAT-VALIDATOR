@@ -1,11 +1,4 @@
 #!/usr/bin/env bash
-# build_pqclean.sh — descarga PQClean y compila los harnesses KAT para
-# ML-KEM-512/768/1024, ML-DSA-44/65/87 y SLH-DSA-SHA2-128s.
-#
-# Resultado:
-#   native/build/pqclean/<ALGORITMO>/kem_harness
-#   native/build/pqclean/<ALGORITMO>/sig_harness
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -1,26 +1,3 @@
-/*
- * kem_harness.c
- *
- * Ejecuta operaciones de ML-KEM con liboqs y escribe el resultado por stdout
- * en formato "CAMPO: hexvalor". Los nombres de campo coinciden con el formato
- * ACVP del NIST (EK, DK, C, K).
- *
- * Sub-comandos:
- *   kem_harness keygen <alg>
- *       Lee d‖z de la semilla KAT (vía LD_PRELOAD) y genera el par de claves.
- *       Salida:  EK: <hex>   (encapsulation key = clave pública)
- *                DK: <hex>   (decapsulation key = clave privada)
- *
- *   kem_harness encaps <alg> <ek_hex>
- *       Lee m de la semilla KAT y encapsula usando la ek indicada.
- *       Salida:  C: <hex>    (ciphertext)
- *                K: <hex>    (shared secret)
- *
- *   kem_harness decaps <alg> <dk_hex> <c_hex>
- *       Decapsula (operación determinista, sin aleatoriedad).
- *       Salida:  K: <hex>    (shared secret)
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

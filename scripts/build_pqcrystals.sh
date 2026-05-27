@@ -1,22 +1,4 @@
 #!/usr/bin/env bash
-# build_pqcrystals.sh — compila los harnesses KAT para pq-crystals
-# (Kyber → ML-KEM, Dilithium → ML-DSA).
-#
-# Estructura del repo pq-crystals:
-#   kyber/ref/       — toda la implementación, parameterizada con -DKYBER_K=N
-#   dilithium/ref/   — toda la implementación, parameterizada con -DDILITHIUM_MODE=N
-#
-# NOTA ACADÉMICA:
-#   Kyber y Dilithium son los predecesores de ML-KEM y ML-DSA. A pesar de
-#   compartir los mismos tamaños de salida en algunos casos, difieren en la
-#   derivación de claves y en otros detalles internos. Validarlos contra los
-#   KAT del NIST (FIPS 203/204) permite documentar la divergencia e ilustrar
-#   la relevancia de la estandarización.
-#
-# Resultado:
-#   native/build/pqcrystals/<ALGORITMO>/kem_harness   (Kyber)
-#   native/build/pqcrystals/<ALGORITMO>/sig_harness   (Dilithium)
-
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

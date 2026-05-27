@@ -1,30 +1,3 @@
-/*
- * sig_harness.c
- *
- * Ejecuta operaciones de ML-DSA / SLH-DSA con liboqs y escribe el resultado
- * por stdout en formato "CAMPO: hexvalor".
- *
- * Sub-comandos:
- *   sig_harness keygen <alg>
- *       Lee la semilla KAT (vía LD_PRELOAD) y genera el par de claves.
- *       Salida:  PK: <hex>
- *                SK: <hex>
- *
- *   sig_harness sign <alg> <sk_hex> <msg_hex> [ctx_hex]
- *       Firma el mensaje con la sk indicada. ctx_hex es opcional (contexto FIPS).
- *       La aleatoriedad de firma (si la hay) se toma de la semilla KAT.
- *       Salida:  SIGNATURE: <hex>
- *
- *   sig_harness verify <alg> <pk_hex> <msg_hex> <sig_hex> [ctx_hex]
- *       Verifica la firma. Operación determinista, sin semilla.
- *       Salida:  VERIFY: PASS   o   VERIFY: FAIL
- *
- * Nota: en 'verify', un FAIL es un resultado válido y esperado (algunos
- * vectores ACVP traen firmas inválidas a propósito). Por eso 'verify'
- * devuelve código 0 tanto si PASA como si FALLA — solo devuelve error
- * ante un fallo real (hex inválido, longitudes incorrectas, etc.).
- */
-
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
