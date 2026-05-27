@@ -17,11 +17,11 @@ class PQCValidatorError(Exception):
     fallo del harness, etc."""
 
 
-KEM_ALGORITHMS: frozenset[str] = frozenset({"ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"})
-MLDSA_ALGORITHMS: frozenset[str] = frozenset({"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"})
-SLHDSA_ALGORITHMS: frozenset[str] = frozenset({"SLH-DSA-SHA2-128s"})
-SIG_ALGORITHMS: frozenset[str] = MLDSA_ALGORITHMS | SLHDSA_ALGORITHMS
-SUPPORTED_ALGORITHMS: frozenset[str] = KEM_ALGORITHMS | SIG_ALGORITHMS
+KEM_ALGORITHMS = {"ML-KEM-512", "ML-KEM-768", "ML-KEM-1024"}
+MLDSA_ALGORITHMS = {"ML-DSA-44", "ML-DSA-65", "ML-DSA-87"}
+SLHDSA_ALGORITHMS = {"SLH-DSA-SHA2-128s"}
+SIG_ALGORITHMS = MLDSA_ALGORITHMS | SLHDSA_ALGORITHMS
+SUPPORTED_ALGORITHMS = KEM_ALGORITHMS | SIG_ALGORITHMS
 
 
 class Operation(str, Enum):
@@ -33,9 +33,9 @@ class Operation(str, Enum):
 
 
 # Directorios ACVP (dentro de kat_vectors/) por familia
-_ACVP_DIRS_KEM: tuple[str, ...] = ("ML-KEM-keyGen-FIPS203", "ML-KEM-encapDecap-FIPS203")
-_ACVP_DIRS_MLDSA: tuple[str, ...] = ("ML-DSA-keyGen-FIPS204", "ML-DSA-sigGen-FIPS204", "ML-DSA-sigVer-FIPS204")
-_ACVP_DIRS_SLHDSA: tuple[str, ...] = ("SLH-DSA-keyGen-FIPS205", "SLH-DSA-sigGen-FIPS205", "SLH-DSA-sigVer-FIPS205")
+_ACVP_DIRS_KEM = ("ML-KEM-keyGen-FIPS203", "ML-KEM-encapDecap-FIPS203")
+_ACVP_DIRS_MLDSA = ("ML-DSA-keyGen-FIPS204", "ML-DSA-sigGen-FIPS204", "ML-DSA-sigVer-FIPS204")
+_ACVP_DIRS_SLHDSA = ("SLH-DSA-keyGen-FIPS205", "SLH-DSA-sigGen-FIPS205", "SLH-DSA-sigVer-FIPS205")
 
 
 @dataclass
@@ -81,7 +81,7 @@ def _parse_group(group: dict[str, Any], mode: str, algorithm: str, source: str) 
 
     deterministic = bool(group.get("deterministic", False))
     prehash = str(group.get("preHash", "pure"))
-    cases: list[ACVPTestCase] = []
+    cases = []
 
     for test in group.get("tests", []):
         tc_id = int(test.get("tcId", -1))
@@ -149,7 +149,7 @@ def parse_acvp_file(json_path: Path, algorithm: str) -> list[ACVPTestCase]:
         raise PQCValidatorError(f"[{json_path.name}] falta el campo 'mode'")
 
     source = json_path.parent.name
-    cases: list[ACVPTestCase] = []
+    cases = []
     for group in data.get("testGroups", []):
         if group.get("parameterSet") == algorithm:
             cases.extend(_parse_group(group, mode, algorithm, source))
@@ -167,7 +167,7 @@ def load_test_cases(kat_dir: Path, algorithm: str) -> list[ACVPTestCase]:
             else _ACVP_DIRS_MLDSA if algorithm in MLDSA_ALGORITHMS
             else _ACVP_DIRS_SLHDSA)
 
-    all_cases: list[ACVPTestCase] = []
+    all_cases = []
     found_any = False
     for dir_name in dirs:
         json_path = kat_dir / dir_name / "internalProjection.json"

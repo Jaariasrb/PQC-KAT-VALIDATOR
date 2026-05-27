@@ -35,7 +35,7 @@ class ReportGenerator:
         ts   = generated_at.replace(":", "").replace("-", "")
         stem = f"{run.algorithm}_{run.library}_{ts}"
 
-        paths: dict[str, Path] = {}
+        paths = {}
         if "json" in active:
             paths["json"] = self._json(run, stem, generated_at)
         if "txt" in active:

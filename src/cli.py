@@ -26,7 +26,7 @@ _KAT_DIR      = _PROJECT_ROOT / "kat_vectors"
 _REPORTS_DIR  = _PROJECT_ROOT / "reports"
 
 # Colores Rich por nivel de conformancia
-_LEVEL_STYLE: dict[str, str] = {
+_LEVEL_STYLE = {
     ConformanceLevel.CONFORMANTE:   "bold green",
     ConformanceLevel.PUNTUAL:       "bold yellow",
     ConformanceLevel.INDETERMINADO: "bold dark_orange",
@@ -160,7 +160,7 @@ def validate(
     try:
         generator = ReportGenerator(output)
         paths = generator.generate_all(run, list(formats))
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:
         console.print(f"[bold red]Error al generar informes:[/bold red] {exc}")
         sys.exit(1)
 

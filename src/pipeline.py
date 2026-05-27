@@ -15,8 +15,6 @@ logger = logging.getLogger(__name__)
 
 ProgressCallback = Callable[[int, int, ACVPTestCase], None]
 
-_PLAIN_FIELDS: frozenset[str] = frozenset({"verify"})
-
 
 class ConformanceLevel(str, Enum):
     CONFORMANTE   = "CONFORMANTE"    # 0 % fallos
@@ -91,14 +89,16 @@ def _first_diff_byte(expected: str, actual: str) -> int:
 
 
 def compare_case(case: ACVPTestCase, actual: dict[str, str]) -> CaseResult:
-    field_results: list[FieldResult] = []
+    field_results = []
     for fname, expected_raw in case.expected.items():
         if fname not in actual:
             raise PQCValidatorError(
                 f"[{case.algorithm}] {case.operation.value} tcId={case.tc_id}: "
                 f"el harness no produjo el campo '{fname}'"
             )
-        if fname in _PLAIN_FIELDS:
+        # El campo "verify" del harness se compara como texto plano (PASS/FAIL),
+        # no como hex.
+        if fname == "verify":
             expected = expected_raw.strip().upper()
             got      = actual[fname].strip().upper()
             diff     = -1
@@ -158,8 +158,8 @@ class Orchestrator:
         cases   = load_test_cases(kat_dir, algorithm)
         total   = len(cases)
 
-        case_results: list[CaseResult] = []
-        run_errors: list[RunError]     = []
+        case_results = []
+        run_errors = []
 
         for i, case in enumerate(cases, start=1):
             try:

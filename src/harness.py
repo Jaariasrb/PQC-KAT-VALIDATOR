@@ -14,16 +14,12 @@ from src.parser import SLHDSA_ALGORITHMS, ACVPTestCase, Operation, PQCValidatorE
 
 logger = logging.getLogger(__name__)
 
-LIBRARIES: tuple[str, ...] = ("liboqs", "pqclean", "pqcrystals")
+LIBRARIES = ("liboqs", "pqclean", "pqcrystals")
 
 _BUILD      = Path(__file__).resolve().parents[1] / "native" / "build"
 _SO_PATH    = _BUILD / "libkat_entropy.so"
 _TIMEOUT    = 60
 _SIGN_RND   = 64  # bytes de ceros para firma ML-DSA determinista
-
-_LIBOQS_ALG_NAMES: dict[str, str] = {
-    "SLH-DSA-SHA2-128s": "SLH_DSA_PURE_SHA2_128S",
-}
 
 
 def _build_seed(case: ACVPTestCase) -> bytes | None:
@@ -79,7 +75,7 @@ def _injection_env(seed_path: Path) -> dict[str, str]:
 
 
 def _parse_output(stdout: str) -> dict[str, str]:
-    result: dict[str, str] = {}
+    result = {}
     for raw in stdout.splitlines():
         line = raw.strip()
         if not line:
@@ -134,7 +130,10 @@ class Harness:
 
     def _args(self, case: ACVPTestCase) -> list[str]:
         op  = case.operation
-        alg = _LIBOQS_ALG_NAMES.get(case.algorithm, case.algorithm) if self._library == "liboqs" else case.algorithm
+        alg = case.algorithm
+        # liboqs usa internamente otro nombre para SLH-DSA
+        if self._library == "liboqs" and alg == "SLH-DSA-SHA2-128s":
+            alg = "SLH_DSA_PURE_SHA2_128S"
 
         if op == Operation.KEYGEN:
             return ["keygen", alg]
