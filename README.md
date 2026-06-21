@@ -778,7 +778,7 @@ El proyecto incluye `.vscode/launch.json` con tres configuraciones:
 - **"Validate: ML-KEM-768 + liboqs (smoke test)"** — caso de control, debe dar CONFORMANTE.
 - **"Validate: elegir algoritmo y librería"** — menús desplegables para elegir.
 
-Requiere la extensión **Python** de Microsoft. Todas usan `${workspaceFolder}/venv/bin/python` como intérprete y `"justMyCode": false` para poder entrar en código de Click, FastAPI, etc.
+Requiere la extensión **Python** de Microsoft. Todas usan `${workspaceFolder}/venv/bin/python` como intérprete y `"justMyCode": false` para poder entrar en código de Click, etc.
 
 **Buenos puntos para breakpoints:**
 - `src/cli.py:129` — punto donde arranca el pipeline (`orchestrator.validate(...)`).
