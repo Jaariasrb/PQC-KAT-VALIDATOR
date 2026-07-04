@@ -173,16 +173,17 @@ def validate(
 @click.pass_context
 def build(ctx: click.Context) -> None:
     """Compila liboqs, el entropy wrapper y los harnesses nativos."""
-    script = _SCRIPTS_DIR / "build_liboqs.sh"
-    if not script.exists():
-        console.print(f"[bold red]Script no encontrado:[/bold red] {script}")
+    scripts = sorted(_SCRIPTS_DIR.glob("build_*.sh"))
+    if not scripts:
+        console.print(f"[bold red]Scripts de build no encontrados:[/bold red]")
         sys.exit(1)
 
-    console.print(f"[cyan]Ejecutando[/cyan] {script.name}…")
-    result = subprocess.run(["bash", str(script)], cwd=_PROJECT_ROOT)
-    if result.returncode != 0:
-        console.print("[bold red]La compilación falló.[/bold red]")
-        sys.exit(result.returncode)
+    for script in scripts:
+        console.print(f"[cyan]Ejecutando[/cyan] {script.name}…")
+        result = subprocess.run(["bash", str(script)], cwd=_PROJECT_ROOT)
+        if result.returncode != 0:
+            console.print("[bold red]La compilación del script {script.name} falló.[/bold red]")
+            sys.exit(result.returncode)
     console.print("[green]Compilación completada.[/green]")
 
 
