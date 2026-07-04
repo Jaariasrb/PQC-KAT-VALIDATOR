@@ -2,7 +2,6 @@
 
 **TFM Máster en Ciberseguridad · UNIR · 2026**
 Autores: Hernández Martín, A. · Arias Rodríguez, J. · Pons Valmana, J.
-Director: Fidel Paniagua Diez
 
 ---
 
