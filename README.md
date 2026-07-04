@@ -2,6 +2,7 @@
 
 **TFM Máster en Ciberseguridad · UNIR · 2026**
 Autores: Hernández Martín, A. · Arias Rodríguez, J. · Pons Valmana, J.
+Director: Fidel Paniagua Diez
 
 ---
 
@@ -26,9 +27,9 @@ Autores: Hernández Martín, A. · Arias Rodríguez, J. · Pons Valmana, J.
    3. [`src/harness.py` — inyección de entropía y ejecución nativa](#43-srcharnesspy--inyección-de-entropía-y-ejecución-nativa)
    4. [`src/pipeline.py` — comparación, clasificación y orquestación](#44-srcpipelinepy--comparación-clasificación-y-orquestación)
    5. [`src/report.py` — generación de informes](#45-srcreportpy--generación-de-informes)
-   6. [`native/kat_entropy.c` — wrapper LD_PRELOAD](#47-nativekat_entropyc--wrapper-ld_preload)
-   7. [Harnesses nativos por librería](#48-harnesses-nativos-por-librería)
-   7. [`native/CMakeLists.txt` y scripts de build](#49-nativecmakeliststxt-y-scripts-de-build)
+   6. [`native/kat_entropy.c` — wrapper LD_PRELOAD](#46-nativekat_entropyc--wrapper-ld_preload)
+   7. [Harnesses nativos por librería](#47-harnesses-nativos-por-librería)
+   8. [`native/CMakeLists.txt` y scripts de build](#48-nativecmakeliststxt-y-scripts-de-build)
 5. [Instalación y uso](#5-instalación-y-uso)
 6. [Hallazgos de conformancia](#6-hallazgos-de-conformancia)
 7. [Limitaciones conocidas](#7-limitaciones-conocidas)
@@ -53,6 +54,8 @@ Los algoritmos validados son los tres estandarizados por el NIST en 2024:
 La herramienta clasifica el comportamiento de cada implementación en uno de cuatro **niveles de conformancia** según el porcentaje de vectores KAT que falla.
 
 El núcleo técnico diferencial es la **inyección determinista de entropía mediante `LD_PRELOAD`**, que permite reproducir los KAT sin modificar el código fuente de ninguna librería. Esto se traduce en una herramienta no invasiva, reproducible y auditable.
+
+La interfaz es exclusivamente de **línea de comandos** (Click + Rich) y los informes se generan en dos formatos: **JSON** (máquina-legible) y **TXT** (humano-legible). El proyecto funciona **solo sobre Linux** (probado en WSL2/Ubuntu), porque `LD_PRELOAD` y `dlsym(RTLD_NEXT)` son específicos de la familia ELF/glibc.
 
 ---
 
@@ -143,7 +146,7 @@ En Linux, los programas obtienen aleatoriedad llamando a tres funciones del sist
 
 El mecanismo **`LD_PRELOAD`** de Linux permite forzar al loader dinámico a cargar primero una librería compartida nuestra, **antes** que las del sistema. Cuando la librería PQC llama a `getrandom`, el loader resuelve la llamada a la versión que vive en `libkat_entropy.so` en vez de a la del kernel.
 
-Nuestro wrapper (`native/kat_entropy.c`) implementa esas tres funciones de modo que, si la variable de entorno `KAT_SEED_FILE` está definida, devuelven los siguientes bytes del fichero indicado. Si no lo está, delegan en la implementación real (encontrada vía `dlsym(RTLD_NEXT, …)`), de modo que la librería sigue funcionando normalmente fuera del contexto de validación.
+Nuestro wrapper (`native/kat_entropy.c`) implementa esas tres funciones de modo que, si la variable de entorno `KAT_SEED_FILE` está definida, devuelven los siguientes bytes del fichero indicado. Para `getrandom` y `getentropy`, si `KAT_SEED_FILE` no está definida, delegan en la implementación real (encontrada vía `dlsym(RTLD_NEXT, …)`), de modo que la librería sigue funcionando normalmente fuera del contexto de validación.
 
 Una sola operación (por ejemplo, `keyGen` de ML-DSA) puede pedir aleatoriedad varias veces seguidas. El wrapper mantiene un offset global (`g_seed_offset`): la primera llamada lee los bytes `[0, n)` del fichero, la segunda `[n, n+m)`, etc. La semilla KAT es por tanto la concatenación exacta de toda la aleatoriedad que la operación consume, en orden.
 
@@ -161,7 +164,7 @@ Cada librería tiene una API distinta, así que hay un harness por familia:
 |---|---|---|
 | liboqs | `kem_harness` + `sig_harness` genéricos | Un único binario por familia: liboqs selecciona el algoritmo en tiempo de ejecución por su nombre (`OQS_KEM_new("ML-KEM-768")`). |
 | PQClean | `kem_harness.c` + `sig_harness.c` genéricos parametrizados | El **mismo fichero `.c`** se compila siete veces, una por algoritmo, con macros `-D` distintas (`-DKEM_KEYPAIR=PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair`, etc.). Produce siete binarios separados. |
-| pq-crystals | `kem_harness.c` (compartido con PQClean) + `sig_harness.c` específico de Dilithium | Dilithium tiene una API con 7 parámetros (incluye `ctx`/`ctxlen`), distinta de PQClean ML-DSA, así que requiere su propio fichero. Seis binarios totales (no implementa SLH-DSA). |
+| pq-crystals | `kem_harness.c` (reutiliza el de PQClean) + `sig_harness.c` específico de Dilithium | Dilithium tiene una API con 7 parámetros (incluye `ctx`/`ctxlen`), distinta de PQClean ML-DSA, así que requiere su propio fichero. Seis binarios totales (no implementa SLH-DSA). |
 
 ### 2.7. Niveles de conformancia
 
@@ -174,7 +177,7 @@ Los resultados de validar todos los vectores KAT de un algoritmo se reducen a un
 | **INDETERMINADO** | entre 5 % y 80 % (inclusive) | Comportamiento inconsistente; ni claramente correcto ni claramente roto. |
 | **SISTEMATICO** | mayor que 80 % | Divergencia estructural respecto al estándar; la implementación no responde a la misma especificación. |
 
-Los umbrales están codificados en `src/pipeline.py`, función `classify()`.
+Los umbrales están codificados en `src/pipeline.py`, función `classify()` (`pipeline.py:116`).
 
 ---
 
@@ -184,15 +187,13 @@ Los umbrales están codificados en `src/pipeline.py`, función `classify()`.
 
 El sistema se organiza en tres capas:
 
-**Presentación** — punto de entrada del usuario:
-- CLI: `src/cli.py` (Click + Rich).
-
-Ambas terminan invocando al orquestador.
+**Presentación** — único punto de entrada del usuario:
+- CLI: `src/cli.py` (Click + Rich). No existe interfaz web; toda la interacción es por línea de comandos.
 
 **Orquestación (Python)** — núcleo de la herramienta:
 - `Orchestrator` (`src/pipeline.py`) recorre los `ACVPTestCase`. Para cada uno: llama a `Harness.run(case)` (`src/harness.py`), compara el resultado con `compare_case(...)` byte a byte y finalmente clasifica el conjunto con `classify(results)` en un `ConformanceLevel`.
-- `Parser ACVP` (`src/parser.py`) carga los test cases del directorio de vectores (`load_test_cases(kat_dir)`).
-- `Report` (`src/report.py`) genera los informes JSON / TXT / HTML con `generate_all`.
+- `Parser ACVP` (`src/parser.py`) carga los test cases del directorio de vectores (`load_test_cases(kat_dir, algorithm)`).
+- `Report` (`src/report.py`) genera los informes **JSON / TXT** con `generate_all`.
 
 **Capa nativa (C, lanzada como subproceso)** — el harness nativo (`kem_harness` o `sig_harness`, según la librería) llama a la librería PQC (liboqs / PQClean / pq-crystals). Cuando esta pide entropía a `getrandom`, `getentropy` o `randombytes`, la intercepta `libkat_entropy.so` (cargada vía `LD_PRELOAD`) y devuelve los bytes del fichero indicado por `KAT_SEED_FILE`.
 
@@ -201,35 +202,36 @@ Ambas terminan invocando al orquestador.
 Tomando como ejemplo `python -m src.cli validate -a ML-KEM-768 -l liboqs`:
 
 1. **Click** parsea los argumentos en `src/cli.py:46` (`@click.group()`) y enruta al comando `validate` en `src/cli.py:93`.
-2. Se instancia `Orchestrator(library="liboqs")` (`src/pipeline.py:155`) y se llama a `orchestrator.validate(algorithm, kat_dir, progress_cb)`.
-3. El orchestrator crea un `Harness("liboqs", "ML-KEM-768")` (`src/harness.py:98`). Esto valida que existe `native/build/liboqs/` y los binarios correspondientes.
-4. **`load_test_cases(kat_dir, "ML-KEM-768")`** (`src/parser.py:163`) abre los dos JSON ACVP del KEM (`ML-KEM-keyGen-FIPS203/internalProjection.json` y `ML-KEM-encapDecap-FIPS203/internalProjection.json`), filtra por `parameterSet == "ML-KEM-768"` y devuelve una lista de `ACVPTestCase`.
-5. Para cada test case, el orchestrator llama a `_run_case`:
-   1. **`Harness.run(case)`** construye la semilla KAT con `_build_seed(case)` (`src/harness.py:31`).
+2. Se instancia `Orchestrator(library="liboqs")` (`src/pipeline.py:151`) y se llama a `orchestrator.validate(algorithm, kat_dir, progress_cb)` (`src/cli.py:129`).
+3. `orchestrator.validate` crea un `Harness("liboqs", "ML-KEM-768")` (`src/pipeline.py:157` → `src/harness.py:93`). El constructor del harness valida que exista el directorio de binarios `native/build/liboqs/`.
+4. **`load_test_cases(kat_dir, "ML-KEM-768")`** (`src/parser.py:159`) abre los dos JSON ACVP del KEM (`ML-KEM-keyGen-FIPS203/internalProjection.json` y `ML-KEM-encapDecap-FIPS203/internalProjection.json`), filtra por `parameterSet == "ML-KEM-768"` y devuelve una lista de `ACVPTestCase`.
+5. Para cada test case, el orchestrator llama a `_run_case` (`src/pipeline.py:176`):
+   1. **`Harness.run(case)`** (`src/harness.py:105`) construye la semilla KAT con `_build_seed(case)` (`src/harness.py:25`).
    2. Escribe la semilla en un fichero temporal vía contexto `_seed_file` (autodelete al salir).
    3. Compone el entorno con `LD_PRELOAD=…/libkat_entropy.so` y `KAT_SEED_FILE=/tmp/kat_seed_XXX.bin`.
    4. Lanza el binario nativo apropiado con `subprocess.run([binary, ...args], env=env, timeout=60)`.
    5. El harness en C llama a la API de liboqs (`OQS_KEM_keypair`, `OQS_KEM_encaps`, `OQS_KEM_decaps`).
    6. liboqs pide aleatoriedad → `libkat_entropy.so` la suministra desde el fichero, byte a byte.
    7. El harness imprime el resultado en formato `CAMPO: hex` en stdout.
-   8. `_parse_output` (`src/harness.py:85`) convierte ese texto en `{"ek": "…", "dk": "…"}`.
-6. **`compare_case(case, actual)`** (`src/pipeline.py:95`) compara los campos esperados con los obtenidos. Si difieren, calcula el primer byte divergente (`_first_diff_byte`). Excepción: campos en `_PLAIN_FIELDS` (solo `verify`) se comparan como texto plano `PASS`/`FAIL`.
-7. **Caso especial — firmas no deterministas.** Si la operación es `sign` y `case.deterministic == False`, no se compara la firma byte a byte (cambiará en cada ejecución). En su lugar, `_functional_sign_check` (`src/pipeline.py:186`) verifica la firma recién generada con `verify` y registra el resultado como `PASS`/`FAIL`.
+   8. `_parse_output` (`src/harness.py:77`) convierte ese texto en `{"ek": "…", "dk": "…"}`.
+6. **`compare_case(case, actual)`** (`src/pipeline.py:91`) compara los campos esperados con los obtenidos. Si difieren, calcula el primer byte divergente (`_first_diff_byte`). Excepción: el campo `verify` se compara como texto plano `PASS`/`FAIL` (`pipeline.py:101`), no como hex.
+7. **Caso especial — firmas no deterministas.** Si la operación es `sign` y `case.deterministic == False`, no se compara la firma byte a byte (cambiará en cada ejecución). En su lugar, `_functional_sign_check` (`src/pipeline.py:182`) verifica la firma recién generada con `verify` y registra el resultado como `PASS`/`FAIL`.
 8. Si el subproceso falla (`returncode != 0`, timeout, hex inválido, contexto no soportado…), se captura como **`RunError`** y se incluye en el informe sin contar como fallo KAT.
-9. Tras procesar todos los casos, **`classify(algorithm, results)`** (`src/pipeline.py:118`) calcula el porcentaje de fallos y asigna un `ConformanceLevel`.
-10. El CLI muestra el resultado en consola con Rich y delega en `ReportGenerator.generate_all(run, ["json", "txt", "html"])` (`src/report.py:130`).
+9. Tras procesar todos los casos, **`classify(algorithm, results)`** (`src/pipeline.py:116`) calcula el porcentaje de fallos y asigna un `ConformanceLevel`.
+10. El CLI muestra el resultado en consola con Rich y delega en `ReportGenerator.generate_all(run, list(formats))` (`src/report.py:32`); `formats` son los indicados con `-f` (por defecto `json` y `txt`).
 11. Los informes se escriben en `reports/` con nombre `{algoritmo}_{libreria}_{timestamp}.{ext}`.
 
 ### 3.3. Estructura de directorios
 
 ```
-pqc-validator/
+pqc-kat-validator/
 ├── src/                       # código Python (estructura plana)
-│   ├── cli.py                 # CLI con Click + Rich
+│   ├── __init__.py
+│   ├── cli.py                 # CLI con Click + Rich (validate, build, fetch-kats)
 │   ├── parser.py              # tipos de dominio + PQCValidatorError + parser ACVP
 │   ├── harness.py             # semilla KAT + LD_PRELOAD + ejecución nativa
 │   ├── pipeline.py            # comparación byte a byte + clasificación + orquestación
-│   └── report.py              # informes JSON / TXT / HTML (Jinja2)
+│   └── report.py              # informes JSON / TXT
 │
 ├── native/                    # código C
 │   ├── kat_entropy.c          # wrapper LD_PRELOAD (intercepta randombytes/getrandom/getentropy)
@@ -249,17 +251,16 @@ pqc-validator/
 │   ├── build_pqcrystals.sh    # clona kyber + dilithium y compila 6 harnesses
 │   └── fetch_kats.sh          # copia los ACVP del NIST desde build/liboqs-src/
 │
-├── kat_vectors/               # vectores ACVP del NIST (gitignored, generado por fetch_kats.sh)
+├── kat_vectors/               # vectores ACVP del NIST (gitignored salvo .gitkeep; lo genera fetch_kats.sh)
 ├── build/                     # liboqs/kyber/dilithium clonados y compilados (gitignored)
 ├── native/build/              # binarios nativos compilados (gitignored)
-├── reports/                   # informes generados (gitignored)
+├── reports/                   # informes generados (gitignored salvo .gitkeep)
 ├── venv/                      # entorno virtual de Python (gitignored)
 │
 ├── pyproject.toml             # configuración de ruff (lint) y mypy (tipos)
-├── requirements.txt           # dependencias de runtime
-├── requirements-dev.txt       # añade ruff y mypy
-├── README.md                  # resumen breve del proyecto
-└── DOCUMENTACION.md           # este fichero
+├── requirements.txt           # dependencias (click, rich, ruff, mypy)
+├── .gitignore
+└── README.md                  # esta documentación
 ```
 
 ---
@@ -268,13 +269,13 @@ pqc-validator/
 
 ### 4.1. `src/cli.py` — interfaz de línea de comandos
 
-Construido con **Click** (parsing de comandos) y **Rich** (salida coloreada, tablas, barras de progreso). Expone cuatro subcomandos:
+Construido con **Click** (parsing de comandos) y **Rich** (salida coloreada, tablas, barras de progreso). Expone **tres** subcomandos:
 
 | Subcomando | Función | Descripción |
 |---|---|---|
 | `validate` | `validate()` (`cli.py:93`) | Valida un algoritmo contra una librería. |
-| `build` | `build()` (`cli.py:174`) | Atajo a `scripts/build_liboqs.sh`. |
-| `fetch-kats` | `fetch_kats()` (`cli.py:198`) | Atajo a `scripts/fetch_kats.sh`. |
+| `build` | `build()` (`cli.py:174`) | Ejecuta en orden **todos** los scripts `scripts/build_*.sh` (liboqs, pqclean y pqcrystals). |
+| `fetch-kats` | `fetch_kats()` (`cli.py:199`) | Atajo a `scripts/fetch_kats.sh`. |
 
 **Flag global** `-v` / `--verbose` (en el grupo principal): cambia el nivel de logging de `WARNING` a `DEBUG` y enruta los logs por `RichHandler`.
 
@@ -283,9 +284,11 @@ El comando `validate` recibe:
 - `-l` / `--library`: `liboqs` (por defecto), `pqclean` o `pqcrystals`.
 - `-k` / `--kat-dir`: directorio de vectores (por defecto `kat_vectors/`).
 - `-o` / `--output`: directorio de informes (por defecto `reports/`).
-- `-f` / `--format` (multiple): `json`, `txt`, `html` (por defecto los tres).
+- `-f` / `--format` (múltiple): `json`, `txt` (por defecto **ambos**).
 
-Tras la validación, el CLI muestra una tabla resumen (total, correctos, fallidos, tasa de fallo) coloreada según el nivel (`_LEVEL_STYLE`), advierte de los `run_errors` si los hay y lista las rutas de los informes generados.
+Tras la validación, el CLI muestra una tabla resumen (test cases, correctos, fallidos, tasa de fallo) coloreada según el nivel (`_LEVEL_STYLE`), advierte de los `run_errors` si los hay y lista las rutas de los informes generados.
+
+> Nota: `build` compila las tres librerías de una sola vez. Cada `scripts/build_*.sh` puede ejecutarse también por separado (ver §5.2).
 
 ### 4.2. `src/parser.py` — tipos de dominio y parser ACVP
 
@@ -311,10 +314,13 @@ class ACVPTestCase:
     operation: Operation
     tc_id: int                          # tcId del JSON ACVP
     source: str                         # nombre del directorio ACVP
-    inputs:   dict[str, str]            # campos hex que entran al harness
-    expected: dict[str, str]            # campos hex que deben salir del harness
+    inputs:   dict[str, str] = field(default_factory=dict)   # campos hex que entran al harness
+    expected: dict[str, str] = field(default_factory=dict)   # campos hex que deben salir del harness
     deterministic: bool = False
     prehash: str = "pure"
+
+    def is_kem(self) -> bool: ...       # True si el algoritmo es un ML-KEM
+    def is_sig(self) -> bool: ...       # True si es ML-DSA o SLH-DSA
 ```
 
 #### Conjuntos de algoritmos soportados
@@ -327,18 +333,18 @@ SIG_ALGORITHMS    = MLDSA_ALGORITHMS | SLHDSA_ALGORITHMS
 SUPPORTED_ALGORITHMS = KEM_ALGORITHMS | SIG_ALGORITHMS
 ```
 
-#### Función pública `load_test_cases(kat_dir, algorithm)`
+#### Función pública `load_test_cases(kat_dir, algorithm)` (`parser.py:159`)
 
-Localiza los directorios ACVP relevantes para el algoritmo, abre cada `internalProjection.json` y delega en `parse_acvp_file()`. Si no encuentra ningún fichero ACVP para el algoritmo, lanza `PQCValidatorError` con un mensaje explícito que indica ejecutar `fetch_kats.sh`.
+Localiza los directorios ACVP relevantes para el algoritmo, abre cada `internalProjection.json` y delega en `parse_acvp_file()`. Si no encuentra ningún fichero ACVP para el algoritmo, lanza `PQCValidatorError` con un mensaje explícito que indica ejecutar `./scripts/fetch_kats.sh`.
 
 #### Filtros aplicados durante el parseo (omisiones intencionadas)
 
-`_parse_group()` omite los grupos que no encajan en el alcance del TFM:
+`_parse_group()` (`parser.py:67`) omite los grupos que no encajan en el alcance del TFM:
 
-- Grupos con `function` distinto de `encapsulation` o `decapsulation` (por ejemplo `encapsulationKeyCheck`).
-- En `sigGen`/`sigVer`: grupos con `preHash != "pure"` (no se valida modo HashML-DSA / HashSLH-DSA).
-- Grupos con `externalMu == True` o `signatureInterface != "external"` (no se valida modo external-µ).
-- Test cases con `deferred == True`.
+- Grupos de `encapDecap` con `function` distinto de `encapsulation` o `decapsulation` (p. ej. `encapsulationKeyCheck`) (`parser.py:70`).
+- En `sigGen`/`sigVer`: grupos con `preHash != "pure"` (no se valida modo HashML-DSA / HashSLH-DSA) (`parser.py:75`).
+- Grupos con `externalMu == True` o `signatureInterface != "external"` (no se valida modo external-µ) (`parser.py:78`).
+- Test cases con `deferred == True` (`parser.py:88`).
 
 Las restantes operaciones se materializan en `ACVPTestCase` con los campos exactos que cada modo requiere:
 
@@ -356,7 +362,7 @@ Las restantes operaciones se materializan en `ACVPTestCase` con los campos exact
 
 Componente puente entre Python y los binarios nativos. Define la tupla `LIBRARIES = ("liboqs", "pqclean", "pqcrystals")`, constantes operativas (`_TIMEOUT = 60` segundos, `_SIGN_RND = 64` bytes de ceros) y la clase `Harness`.
 
-#### Construcción de la semilla — `_build_seed(case)`
+#### Construcción de la semilla — `_build_seed(case)` (`harness.py:25`)
 
 La función reconstruye la entropía que el algoritmo necesita consumir, en el orden correcto. Devuelve `None` si la operación es totalmente determinista (`DECAPS` y `VERIFY` no requieren aleatoriedad):
 
@@ -370,19 +376,19 @@ La función reconstruye la entropía que el algoritmo necesita consumir, en el o
 | `SIGN` (SLH-DSA determinista) | primera mitad de `pk` (= pkSeed según FIPS 205) |
 | `DECAPS`, `VERIFY` | `None` |
 
-El detalle de SLH-DSA con `deterministic == True`: el estándar exige usar la primera mitad de la clave pública como semilla de firma; el código replica ese requisito (`harness.py:43-44`).
+El detalle de SLH-DSA con `deterministic == True`: el estándar exige usar la primera mitad de la clave pública como semilla de firma; el código replica ese requisito (`harness.py:37-38`).
 
 #### Preparación del entorno — `_seed_file()` y `_injection_env()`
 
-`_seed_file(case)` es un **context manager**: escribe la semilla en un `NamedTemporaryFile` con prefijo `kat_seed_`, lo `flush`-ea y devuelve la ruta; al salir del bloque, el fichero se borra automáticamente.
+`_seed_file(case)` (`harness.py:53`) es un **context manager**: escribe la semilla en un `NamedTemporaryFile` con prefijo `kat_seed_`, lo `flush`-ea y devuelve la ruta; al salir del bloque, el fichero se borra automáticamente.
 
-`_injection_env(seed_path)` compone un `dict[str, str]` partiendo de `os.environ` y añade:
+`_injection_env(seed_path)` (`harness.py:65`) compone un `dict[str, str]` partiendo de `os.environ` y añade:
 - `LD_PRELOAD = native/build/libkat_entropy.so`
 - `KAT_SEED_FILE = /tmp/kat_seed_XXX.bin`
 
-Si el `.so` no existe, lanza `PQCValidatorError` indicando ejecutar `scripts/build_liboqs.sh`.
+Si el `.so` no existe, lanza `PQCValidatorError` indicando ejecutar `./scripts/build_liboqs.sh`.
 
-#### Clase `Harness`
+#### Clase `Harness` (`harness.py:90`)
 
 ```python
 class Harness:
@@ -394,15 +400,18 @@ class Harness:
   - liboqs → `native/build/liboqs/`
   - pqclean → `native/build/pqclean/{ALGORITMO}/`
   - pqcrystals → `native/build/pqcrystals/{ALGORITMO}/`
-- `run(case)` selecciona el binario (`kem_harness` o `sig_harness` según `case.is_kem()`), arma los `argv` con `_args(case)`, gestiona el contexto de semilla y delega en `_exec`.
+- `run(case)` (`harness.py:105`) selecciona el binario (`kem_harness` o `sig_harness` según `case.is_kem()`), arma los `argv` con `_args(case)`, gestiona el contexto de semilla y delega en `_exec`.
 
 #### Mapeo de nombres específico de liboqs
 
+liboqs usa internamente un nombre distinto al ACVP para SLH-DSA. El mapeo se hace en línea dentro de `_args` (`harness.py:135-136`):
+
 ```python
-_LIBOQS_ALG_NAMES = { "SLH-DSA-SHA2-128s": "SLH_DSA_PURE_SHA2_128S" }
+if self._library == "liboqs" and alg == "SLH-DSA-SHA2-128s":
+    alg = "SLH_DSA_PURE_SHA2_128S"
 ```
 
-liboqs usa internamente un nombre distinto al ACVP para SLH-DSA. Para el resto de algoritmos coincide y no hace falta mapeo.
+Para el resto de algoritmos el nombre coincide y no hace falta mapeo.
 
 #### Formato de argumentos al binario
 
@@ -414,15 +423,15 @@ sign   <alg> <sk_hex> <msg_hex> [ctx_hex]
 verify <alg> <pk_hex> <msg_hex> <sig_hex> [ctx_hex]
 ```
 
-#### Parsing de la salida — `_parse_output(stdout)`
+#### Parsing de la salida — `_parse_output(stdout)` (`harness.py:77`)
 
-La salida del harness es texto plano, una línea por campo, en formato `CAMPO: VALOR`. Esta función lo convierte en `dict[str, str]` con claves en minúsculas. Cualquier línea sin formato esperado provoca `PQCValidatorError`.
+La salida del harness es texto plano, una línea por campo, en formato `CAMPO: VALOR`. Esta función lo convierte en `dict[str, str]` con claves en minúsculas. Cualquier línea sin el formato esperado provoca `PQCValidatorError`.
 
 ### 4.4. `src/pipeline.py` — comparación, clasificación y orquestación
 
 Concentra la lógica de "qué es conforme" y orquesta el procesamiento de todos los casos.
 
-#### `class ConformanceLevel(str, Enum)`
+#### `class ConformanceLevel(str, Enum)` (`pipeline.py:19`)
 
 ```python
 CONFORMANTE   = "CONFORMANTE"     # 0 %
@@ -459,6 +468,8 @@ class ConformanceReport:
     failed_cases: int
     failure_rate: float
     case_results: list[CaseResult]
+    # passed_cases: int — propiedad: total_cases - failed_cases
+    # summary() -> str
 
 @dataclass
 class RunError:
@@ -472,16 +483,17 @@ class ValidationRun:
     library: str
     kat_dir: Path
     report: ConformanceReport
-    run_errors: list[RunError]
+    run_errors: list[RunError] = field(default_factory=list)
+    # has_run_errors: bool — propiedad
 ```
 
-#### Comparación — `compare_case(case, actual)`
+#### Comparación — `compare_case(case, actual)` (`pipeline.py:91`)
 
-Para cada campo en `case.expected`, normaliza el hex (mayúsculas, validación de longitud par y caracteres válidos) y compara con el valor producido por el harness. Si difieren, calcula el primer byte divergente con `_first_diff_byte`.
+Para cada campo en `case.expected`, normaliza el hex (mayúsculas, validación de longitud par y caracteres válidos con `_normalize_hex`) y compara con el valor producido por el harness. Si difieren, calcula el primer byte divergente con `_first_diff_byte`.
 
-El conjunto `_PLAIN_FIELDS = {"verify"}` excluye campos que no son hex: el harness imprime `VERIFY: PASS` o `VERIFY: FAIL`, y la comparación es de texto.
+El campo `verify` es la única excepción: no es hex. El harness imprime `VERIFY: PASS` o `VERIFY: FAIL`, y la comparación se hace como texto plano en línea (`pipeline.py:101`).
 
-#### Clasificación — `classify(algorithm, results)`
+#### Clasificación — `classify(algorithm, results)` (`pipeline.py:116`)
 
 Cuenta fallos, calcula tasa y aplica el árbol de decisión:
 
@@ -494,7 +506,7 @@ level = (CONFORMANTE if rate == 0.0
 
 Si la lista de resultados está vacía, devuelve `INDETERMINADO` con 0/0.
 
-#### `class Orchestrator`
+#### `class Orchestrator` (`pipeline.py:151`)
 
 ```python
 class Orchestrator:
@@ -502,46 +514,28 @@ class Orchestrator:
     def validate(self, algorithm, kat_dir, progress_cb=None) -> ValidationRun: ...
 ```
 
-Su método `validate` carga los test cases, itera, ejecuta cada uno, captura `PQCValidatorError` por test case (no aborta — registra `RunError` y sigue), y emite progreso vía callback opcional.
+Su método `validate` (`pipeline.py:155`) crea el `Harness`, carga los test cases, itera, ejecuta cada uno, captura `PQCValidatorError` por test case (no aborta — registra `RunError` y sigue), y emite progreso vía callback opcional.
 
 #### Caso especial — firmas no deterministas (ML-DSA)
 
-Cuando `case.operation == SIGN` y `case.deterministic == False`, comparar la firma byte a byte no es posible: cada ejecución produce una firma distinta (firma aleatorizada). El método `_functional_sign_check` (`pipeline.py:186`) toma la firma recién producida y la verifica con `verify` usando la `pk` del propio test case. El resultado se reporta como `verify: PASS` o `verify: FAIL`. La operación se vuelve a etiquetar como `"sign"` en el `CaseResult` para que el informe muestre la operación original.
+Cuando `case.operation == SIGN` y `case.deterministic == False`, comparar la firma byte a byte no es posible: cada ejecución produce una firma distinta (firma aleatorizada). El método `_functional_sign_check` (`pipeline.py:182`) toma la firma recién producida y la verifica con `verify` usando la `pk` del propio test case. El resultado se reporta como `verify: PASS` o `verify: FAIL`. La operación se vuelve a etiquetar como `"sign"` en el `CaseResult` para que el informe muestre la operación original.
 
 ### 4.5. `src/report.py` — generación de informes
 
-`ReportGenerator(output_dir)` produce hasta tres ficheros por validación, con el patrón de nombre:
+`ReportGenerator(output_dir)` produce **hasta dos ficheros** por validación (JSON y TXT), con el patrón de nombre:
 
 ```
-{algoritmo}_{libreria}_{YYYYMMDDTHHMMSS}.{json|txt|html}
+{algoritmo}_{libreria}_{YYYYMMDDTHHMMSS}.{json|txt}
 ```
 
-- **JSON** — estructurado, máquina-legible. Incluye metadatos, conformancia, breakdown por operación, lista completa de casos (con `first_diff_byte` y previews de 32 caracteres hex) y `run_errors`.
-- **TXT** — informe humano monoespaciado con sección de fallos detallados.
-- **HTML** — informe visual dark theme (mismo estilo que la web), tabla de operaciones, lista de casos coloreada. CSS y plantilla Jinja2 incluidos inline.
+- **JSON** (`_json`, `report.py:45`) — estructurado, máquina-legible. Incluye metadatos (`generated_at`, `algorithm`, `library`), bloque `conformance` (nivel, totales, tasa), `operations` (breakdown por operación), lista completa de `case_results` (con `first_diff_byte` y previews de 32 caracteres hex por campo) y `run_errors`.
+- **TXT** (`_txt`, `report.py:69`) — informe humano monoespaciado: cabecera, nivel de conformancia, totales, desglose por operación, sección de errores de ejecución (`run_errors`) y sección de test cases fallidos con el offset del primer byte distinto por campo.
 
-El breakdown por operación se calcula con `_breakdown(run)`: agrupa los `CaseResult` por `operation` (`keygen`, `encaps`, `decaps`, `sign`, `verify`) y cuenta totales / correctos / fallidos por grupo.
+`generate_all(run, formats)` (`report.py:32`) genera solo los formatos pedidos (por defecto `["json", "txt"]`).
 
-#### Modelo de jobs y progreso
+El breakdown por operación se calcula con `_breakdown(run)` (`report.py:16`): agrupa los `CaseResult` por `operation` (`keygen`, `encaps`, `decaps`, `sign`, `verify`) y cuenta totales / correctos / fallidos por grupo.
 
-Los jobs se guardan en un dict en memoria (`_jobs: dict[str, dict]`). Cada job almacena:
-
-```python
-{
-  "events": [...],   # lista de eventos para SSE
-  "done": bool,
-  "result": dict | None,
-  "mode": "single" | "all"
-}
-```
-
-`_run(job_id, algorithm, library)` ejecuta una validación; `_run_all(job_id, algorithm)` itera secuencialmente sobre las tres librerías. La ejecución se delega a `asyncio.to_thread(orch.validate, …)` para no bloquear el event loop. El callback `on_progress` añade entradas a `events`, que el endpoint SSE consume y reenvía al cliente.
-
-#### Frontend
-
-`index.html` es una SPA monoarchivo con CSS y JS inline (dark theme tipo GitHub: `#0d1117`, `#161b22`, `#58a6ff`). Selectores para algoritmo y librería (incluida la opción "Todas"), barra de progreso por librería, comparativa lado a lado en modo "Todas" y enlaces de descarga de informes JSON/TXT/HTML al finalizar.
-
-### 4.7. `native/kat_entropy.c` — wrapper LD_PRELOAD
+### 4.6. `native/kat_entropy.c` — wrapper LD_PRELOAD
 
 Sustituye tres funciones del sistema:
 
@@ -551,13 +545,13 @@ Sustituye tres funciones del sistema:
 | `getrandom(buf, n, flags)` | syscall Linux | Kernel/glibc moderno |
 | `getentropy(buf, n)` | glibc wrapper | liboqs (`OQS_randombytes_system`) |
 
-Las tres funciones leen del fichero indicado por `KAT_SEED_FILE` siguiendo el modelo secuencial: la primera lectura toma los bytes `[0, n)`, la siguiente `[n, n+m)`, etc., manteniendo un offset global en memoria del proceso. Si la semilla se agota antes de tiempo, el wrapper aborta con `abort()` y un mensaje a stderr identificando el offset y los bytes pedidos frente a los disponibles.
+Las tres funciones leen del fichero indicado por `KAT_SEED_FILE` siguiendo el modelo secuencial: la primera lectura toma los bytes `[0, n)`, la siguiente `[n, n+m)`, etc., manteniendo un offset global (`g_seed_offset`) en memoria del proceso. Si la semilla se agota antes de tiempo, o si `KAT_SEED_FILE` apunta a un fichero inexistente, el wrapper aborta con `abort()` y un mensaje a stderr identificando el offset y los bytes pedidos frente a los disponibles.
 
-Si `KAT_SEED_FILE` no está definida (uso "normal" sin validación), `getrandom` y `getentropy` delegan en la función real obtenida vía `dlsym(RTLD_NEXT, …)`. La librería compartida se compila con `-ldl` para resolver `dlsym`.
+`randombytes` siempre lee de la semilla (aborta si `KAT_SEED_FILE` no está definida). En cambio, `getrandom` y `getentropy` solo usan la semilla si `KAT_SEED_FILE` está definida; en uso "normal" (sin validación) delegan en la función real obtenida vía `dlsym(RTLD_NEXT, …)`. La librería compartida se compila enlazando con `dl` (`-ldl`) para resolver `dlsym`.
 
 A la hora de depurar conviene tener presente que el offset es estático por proceso, no por operación. Cada invocación del harness es un proceso nuevo y empieza con offset 0; eso garantiza que dos test cases consecutivos no se contaminen mutuamente.
 
-### 4.8. Harnesses nativos por librería
+### 4.7. Harnesses nativos por librería
 
 #### `native/liboqs/kem_harness.c` y `sig_harness.c`
 
@@ -578,11 +572,11 @@ OQS_SIG_verify(sig, m, mlen, signature, siglen, pk);
 OQS_SIG_verify_with_ctx_str(sig, m, mlen, signature, siglen, ctx, ctxlen, pk);
 ```
 
-Un **único binario** por familia (`kem_harness`, `sig_harness`); el algoritmo se selecciona en runtime por `argv[2]`. Maneja explícitamente el parámetro `ctx` opcional. `verify` siempre devuelve código 0 (PASS/FAIL son ambos resultados válidos del KAT).
+Un **único binario** por familia (`kem_harness`, `sig_harness`); el algoritmo se selecciona en runtime por `argv[2]`. Maneja explícitamente el parámetro `ctx` opcional (usa la variante `_with_ctx_str` solo si el contexto es no vacío). `verify` siempre devuelve código 0 e imprime `VERIFY: PASS` o `VERIFY: FAIL` (ambos son resultados válidos del KAT).
 
 #### `native/pqclean/kem_harness.c` y `sig_harness.c`
 
-Genéricos parametrizados por **macros de compilación** (`-D`). El mismo `.c` se compila siete veces, una por algoritmo, inyectando:
+Genéricos parametrizados por **macros de compilación** (`-D`). El mismo `.c` se compila una vez por algoritmo, inyectando el prefijo de las funciones y los tamaños de buffer:
 
 ```c
 -DKEM_KEYPAIR=PQCLEAN_MLKEM512_CLEAN_crypto_kem_keypair
@@ -593,9 +587,9 @@ Genéricos parametrizados por **macros de compilación** (`-D`). El mismo `.c` s
 // ...
 ```
 
-Cada binario sirve **solo** para su algoritmo (los buffers son arrays de tamaño fijo determinados en compilación).
+Cada binario sirve **solo** para su algoritmo (los buffers son arrays de tamaño fijo determinados en compilación); `argv[2]` (el nombre del algoritmo) se ignora.
 
-El `sig_harness.c` de PQClean tiene una limitación conocida: no soporta el parámetro `ctx` de FIPS 204. Si recibe contexto no vacío devuelve error inmediatamente, lo que se traduce en un `RunError` en el informe; el caso se reporta como "no ejecutable", no como fallo KAT. El comentario en el código C es explícito al respecto.
+El `sig_harness.c` de PQClean tiene una limitación conocida: no soporta el parámetro `ctx` de FIPS 204. Si recibe contexto no vacío devuelve error inmediatamente (`"contexto no vacío no soportado por esta implementación"`), lo que se traduce en un `RunError` en el informe; el caso se reporta como "no ejecutable", no como fallo KAT.
 
 #### `native/pqcrystals/sig_harness.c`
 
@@ -608,43 +602,43 @@ extern int SIG_SIGN(uint8_t *sig, size_t *siglen,
                     const uint8_t *sk);
 ```
 
-El harness pasa siempre `ctx = NULL, ctxlen = 0`. Esto significa que con vectores ACVP que tengan contexto no vacío, el resultado **divergirá** — pero como divergencia algorítmica (no como `RunError`), lo que es semánticamente correcto: Dilithium no implementa el contexto FIPS 204.
+El harness ignora el `ctx` recibido y pasa siempre `ctx = NULL, ctxlen = 0`. Esto significa que, con vectores ACVP que tengan contexto no vacío, el resultado **divergirá** — pero como divergencia algorítmica (no como `RunError`), lo que es semánticamente correcto: este harness no implementa el contexto FIPS 204.
 
 #### Tabla de tamaños (verificable en los scripts `build_*.sh`)
 
-| Algoritmo | PK | SK (PQClean) | SK (pq-crystals) | C / sig max |
-|---|---|---|---|---|
-| ML-KEM-512 | 800 | 1632 | 1632 | 768 |
-| ML-KEM-768 | 1184 | 2400 | 2400 | 1088 |
-| ML-KEM-1024 | 1568 | 3168 | 3168 | 1568 |
-| ML-DSA-44 | 1312 | 2560 | 2560 | 2420 |
-| ML-DSA-65 | 1952 | 4032 | 4032 | 3309 |
-| ML-DSA-87 | 2592 | 4896 | 4896 | 4627 |
-| SLH-DSA-SHA2-128s | 32 | 64 | n/d | 7856 |
+| Algoritmo | PK | SK (PQClean / pq-crystals) | C / sig max |
+|---|---|---|---|
+| ML-KEM-512 | 800 | 1632 | 768 |
+| ML-KEM-768 | 1184 | 2400 | 1088 |
+| ML-KEM-1024 | 1568 | 3168 | 1568 |
+| ML-DSA-44 | 1312 | 2560 | 2420 |
+| ML-DSA-65 | 1952 | 4032 | 3309 |
+| ML-DSA-87 | 2592 | 4896 | 4627 |
+| SLH-DSA-SHA2-128s | 32 | 64 (solo PQClean) | 7856 |
 
-> Nota: los tamaños SK que PQClean y pq-crystals usan **no coinciden con FIPS 204** para ML-DSA. Según los autores, FIPS 204 establece SK de 2528 / 4000 / 4864 (para ML-DSA-44 / 65 / 87); PQClean usa el formato "expandido" de 2560 / 4032 / 4896 y pq-crystals usa los mismos tamaños expandidos. La consecuencia es que los vectores ACVP no se pueden inyectar tal cual en `sign` (la SK del KAT tiene tamaño FIPS), lo que se manifiesta como `RunError` o como divergencia, según la librería.
+> Nota: los tamaños de SK que PQClean y pq-crystals usan para ML-DSA **no coinciden con FIPS 204**. FIPS 204 establece SK de 2528 / 4000 / 4864 (para ML-DSA-44 / 65 / 87); tanto PQClean como pq-crystals (Dilithium) usan el formato "expandido" de 2560 / 4032 / 4896. Además Dilithium usa firmas de 2420 / 3309 / 4627, distintas de las de FIPS 204 (2420 / 3309 / 4627 son las de Dilithium; FIPS define 2420 / 3309 / 4627 para el nivel equivalente, pero el SK difiere). La consecuencia es que los vectores ACVP no se pueden inyectar tal cual en `sign` (la SK del KAT tiene tamaño FIPS), lo que se manifiesta como `RunError` (PQClean rechaza el tamaño) o como divergencia (pq-crystals), según la librería.
 
-### 4.9. `native/CMakeLists.txt` y scripts de build
+### 4.8. `native/CMakeLists.txt` y scripts de build
 
 **`CMakeLists.txt`** compila dos cosas únicamente:
 
-1. **`libkat_entropy.so`** — librería compartida con `-ldl` para `dlsym(RTLD_NEXT, …)`. Se publica en `native/build/libkat_entropy.so`.
+1. **`libkat_entropy.so`** — librería compartida enlazada con `dl` para `dlsym(RTLD_NEXT, …)`. Se publica en `native/build/libkat_entropy.so`.
 2. **`kem_harness` y `sig_harness` de liboqs** — buscan los headers y la `.so` de liboqs en `LIBOQS_DIR` (por defecto `${CMAKE_SOURCE_DIR}/../build/liboqs`). Salen en `native/build/liboqs/`.
 
-PQClean y pq-crystals **no** pasan por CMake — sus harnesses los compilan `gcc` directamente desde los respectivos scripts shell, porque su modelo es "un binario por algoritmo" parametrizado por defines.
+PQClean y pq-crystals **no** pasan por CMake — sus harnesses los compila `gcc` directamente desde los respectivos scripts shell, porque su modelo es "un binario por algoritmo" parametrizado por defines.
 
 #### `scripts/build_liboqs.sh`
 
-1. Si `build/liboqs-src/` no existe, clona `liboqs 0.15.0` con `--depth 1`.
-2. CMake configura e instala liboqs en `build/liboqs/`:
+1. Comprueba dependencias (`git cmake gcc make`).
+2. Si `build/liboqs-src/` no existe, clona `liboqs 0.15.0` con `--depth 1 --branch 0.15.0`.
+3. CMake configura, compila e instala liboqs en `build/liboqs/`:
    - `-DBUILD_SHARED_LIBS=ON` `-DOQS_BUILD_ONLY_LIB=ON` `-DOQS_DIST_BUILD=ON`
    - `-DOQS_USE_OPENSSL=OFF` `-DOQS_ALGS_ENABLED=STD` `-DCMAKE_POSITION_INDEPENDENT_CODE=ON`
-3. CMake compila `native/` (genera `libkat_entropy.so` + harnesses liboqs).
-4. Verifica los artefactos en `native/build/libkat_entropy.so`, `native/build/liboqs/kem_harness`, `native/build/liboqs/sig_harness`.
+4. CMake compila `native/` (genera `libkat_entropy.so` + harnesses liboqs) y verifica los artefactos en `native/build/libkat_entropy.so`, `native/build/liboqs/kem_harness`, `native/build/liboqs/sig_harness`.
 
 #### `scripts/build_pqclean.sh`
 
-Clona el repo `PQClean` (branch `master`) y llama a `gcc -O2` siete veces:
+Clona el repo `PQClean` (branch `master`, `--depth 1`) y llama a `gcc -O2` siete veces:
 - `compile_kem` para ML-KEM-512/768/1024 con `randombytes.c` + `fips202.c`.
 - `compile_sig` para ML-DSA-44/65/87 añadiendo `sha2.c`.
 - `compile_sig` para SLH-DSA-SHA2-128s (mapeado a `sphincs-sha2-128s-simple`) también con `sha2.c`.
@@ -653,16 +647,16 @@ Cada compilación produce `native/build/pqclean/<ALGORITMO>/{kem|sig}_harness`.
 
 #### `scripts/build_pqcrystals.sh`
 
-Clona los repos `pq-crystals/kyber` y `pq-crystals/dilithium` (cada uno usa `KYBER_K` / `DILITHIUM_MODE` para seleccionar el nivel de seguridad en tiempo de compilación):
+Clona los repos `pq-crystals/kyber` y `pq-crystals/dilithium` (`--depth 1`, rama por defecto; cada uno usa `KYBER_K` / `DILITHIUM_MODE` para seleccionar el nivel de seguridad en tiempo de compilación):
 
-- `compile_kyber` 3 veces (KYBER_K = 2, 3, 4) con prefijos `pqcrystals_kyber{512|768|1024}_ref_`.
-- `compile_dilithium` 3 veces (DILITHIUM_MODE = 2, 3, 5) con prefijos `pqcrystals_dilithium{2|3|5}_ref_`.
+- `compile_kyber` 3 veces (KYBER_K = 2, 3, 4) con namespaces `pqcrystals_kyber{512|768|1024}_ref`.
+- `compile_dilithium` 3 veces (DILITHIUM_MODE = 2, 3, 5) con namespaces `pqcrystals_dilithium{2|3|5}_ref`.
 
-Para Kyber **reutiliza el harness genérico `native/pqclean/kem_harness.c`** (API compatible). Para Dilithium usa el harness específico `native/pqcrystals/sig_harness.c` (API de 7 parámetros).
+Para Kyber **reutiliza el harness genérico `native/pqclean/kem_harness.c`** (API compatible). Para Dilithium usa el harness específico `native/pqcrystals/sig_harness.c` (API de 7 parámetros). No compila SLH-DSA.
 
 #### `scripts/fetch_kats.sh`
 
-Copia ocho directorios desde `build/liboqs-src/tests/ACVP_Vectors/` a `kat_vectors/`:
+Copia ocho directorios desde `build/liboqs-src/tests/ACVP_Vectors/` a `kat_vectors/` (o al directorio que se pase como primer argumento). Requiere haber ejecutado `build_liboqs.sh` antes (necesita `build/liboqs-src/`):
 - `ML-KEM-keyGen-FIPS203`, `ML-KEM-encapDecap-FIPS203`
 - `ML-DSA-keyGen-FIPS204`, `ML-DSA-sigGen-FIPS204`, `ML-DSA-sigVer-FIPS204`
 - `SLH-DSA-keyGen-FIPS205`, `SLH-DSA-sigGen-FIPS205`, `SLH-DSA-sigVer-FIPS205`
@@ -675,52 +669,59 @@ Cada directorio contiene un `internalProjection.json` con todos los grupos de te
 
 ### 5.1. Requisitos del sistema
 
-- **Linux** (probado en WSL2/Ubuntu y distribuciones derivadas). El proyecto no soporta Windows nativo ni macOS — `LD_PRELOAD` y `dlsym(RTLD_NEXT)` son específicos de la familia ELF/glibc.
+- **Linux** (probado en WSL2/Ubuntu y distribuciones derivadas). El proyecto **no soporta Windows nativo ni macOS** — `LD_PRELOAD` y `dlsym(RTLD_NEXT)` son específicos de la familia ELF/glibc.
 - **Python 3.11+** (probado en 3.12).
 - **CMake 3.16+**, **GCC** (o Clang), **make**, **git**.
 - Conexión a internet para los clones de liboqs, PQClean, kyber, dilithium.
 
+> En Windows, la vía recomendada es **WSL2 con Ubuntu**. Requiere tener habilitado el componente "Plataforma de máquina virtual" y la virtualización en el BIOS.
+
 ### 5.2. Instalación desde cero
 
 ```bash
-git clone <repo> pqc-validator
-cd pqc-validator
-git checkout Develop
-
+# 1. Entorno Python
 python3 -m venv venv
 source venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements-dev.txt
+pip install -r requirements.txt        # click, rich, ruff, mypy
 
-./scripts/build_liboqs.sh        # liboqs + libkat_entropy.so + harnesses liboqs
-./scripts/build_pqclean.sh       # 7 binarios PQClean
-./scripts/build_pqcrystals.sh    # 6 binarios pq-crystals (sin SLH-DSA)
-./scripts/fetch_kats.sh          # 8 directorios ACVP
+# 2. Compilar las tres librerías (opción A: un solo comando)
+python -m src.cli build                # ejecuta los tres scripts build_*.sh en orden
+
+#    (opción B: por separado)
+./scripts/build_liboqs.sh              # liboqs + libkat_entropy.so + harnesses liboqs
+./scripts/build_pqclean.sh             # 7 binarios PQClean
+./scripts/build_pqcrystals.sh          # 6 binarios pq-crystals (sin SLH-DSA)
+
+# 3. Copiar los vectores ACVP del NIST (requiere build_liboqs previo)
+python -m src.cli fetch-kats           # o: ./scripts/fetch_kats.sh
 ```
 
-El paso más largo es `build_liboqs.sh` (clone + compilación con CMake de liboqs entera): varios minutos. Los demás son rápidos (segundos a 1-2 min).
+El paso más largo es la compilación de liboqs (clone + CMake de la librería entera): varios minutos. Los demás son rápidos (segundos a 1-2 min).
 
 ### 5.3. Comandos del CLI
 
 ```bash
-# Validar un algoritmo contra una librería (genera JSON/TXT/HTML en reports/)
+# Validar un algoritmo contra una librería (genera JSON y TXT en reports/)
 python -m src.cli validate -a ML-KEM-768 -l liboqs
 python -m src.cli validate -a ML-DSA-65 -l pqclean
-python -m src.cli validate -a ML-KEM-512 -l pqcrystals -f json -f html
+python -m src.cli validate -a ML-KEM-512 -l pqcrystals -f json -f txt
 
-# Modo verbose (logs DEBUG con formato Rich)
+# Modo verbose (logs DEBUG con formato Rich) — la flag -v va en el grupo, antes del subcomando
 python -m src.cli -v validate -a ML-KEM-768 -l liboqs
 
-# Atajos a los scripts de build / fetch
+# Compilar (las tres librerías) y copiar vectores
 python -m src.cli build
 python -m src.cli fetch-kats
 ```
 
 ### 5.4. Lint y tipos
 
+La configuración vive en `pyproject.toml`:
+
 ```bash
-ruff check .       # configuración en pyproject.toml: E F W I UP B SIM (ignora E501)
-mypy src/          # strict, Python 3.11
+ruff check .       # [tool.ruff] line-length = 100, src = ["src"]
+mypy src/          # [tool.mypy] python_version = "3.11", files = ["src"]
 ```
 
 ---
@@ -735,9 +736,9 @@ Los resultados a continuación corresponden a las validaciones realizadas durant
 | **pqclean** | CONFORMANTE | CONFORMANTE * | INDETERMINADO ** |
 | **pqcrystals** | SISTEMATICO | (SK incompatible con FIPS 204) *** | N/D |
 
-**(\*) PQClean ML-DSA.** SK de tamaño expandido (2560 / 4032 / 4896 bytes vs los 2528 / 4000 / 4864 de FIPS 204). Los vectores ACVP con contexto no vacío (168 de 360 sigGen) se registran como `RunError` porque el harness PQClean SIG no soporta contexto.
+**(\*) PQClean ML-DSA.** SK de tamaño expandido (2560 / 4032 / 4896 bytes vs los 2528 / 4000 / 4864 de FIPS 204). Los vectores ACVP con contexto no vacío se registran como `RunError` porque el harness PQClean SIG no soporta contexto.
 
-**(\*\*) PQClean SLH-DSA.** Keygen CONFORMANTE; firma determinista diverge en el byte 0 del SPHINCS+-simple respecto a FIPS 205 en 1 de 13 casos KAT. Vectores con contexto → `RunError`.
+**(\*\*) PQClean SLH-DSA.** Keygen CONFORMANTE; la firma determinista diverge respecto a FIPS 205 en algunos vectores KAT. Vectores con contexto → `RunError`.
 
 **(\*\*\*) pq-crystals Dilithium.** Tamaños de SK 32 bytes mayores que ML-DSA (formato anterior al estándar). Los `sigGen` con SK de FIPS 204 fallan por tamaño. pq-crystals no cubre SLH-DSA.
 
@@ -749,9 +750,9 @@ El resultado más interesante es el de pq-crystals Kyber: con el mismo seed que 
 
 Decisiones de scope tomadas durante el desarrollo del TFM, todas documentadas en el código:
 
-1. **Grupos `keyCheck`** (`encapsulationKeyCheck`, `decapsulationKeyCheck`) → omitidos por el parser (`parser.py:74`).
-2. **Modos `preHash != pure`** (HashML-DSA, HashSLH-DSA) → omitidos (`parser.py:79`).
-3. **Modo `externalMu`** / `signatureInterface != external` → omitidos (`parser.py:82`).
+1. **Grupos `keyCheck`** (`encapsulationKeyCheck`, `decapsulationKeyCheck`) → omitidos por el parser (`parser.py:70`).
+2. **Modos `preHash != pure`** (HashML-DSA, HashSLH-DSA) → omitidos (`parser.py:75`).
+3. **Modo `externalMu`** / `signatureInterface != external` → omitidos (`parser.py:78`).
 4. **Contexto no vacío en PQClean** → `RunError` (el harness lo rechaza explícitamente).
 5. **Contexto no vacío en pq-crystals** → ignorado silenciosamente (siempre se pasa `NULL`).
 6. **SLH-DSA no disponible en pq-crystals**.
@@ -769,20 +770,15 @@ python -m src.cli -v validate -a ML-KEM-768 -l liboqs 2>&1 | tee /tmp/debug.log
 
 La flag `-v` (en el grupo principal, antes del subcomando) sube el nivel de logging a `DEBUG` con `RichHandler`.
 
-### 8.2. Debugger Python desde VS Code
+### 8.2. Debugger Python
 
-El proyecto incluye `.vscode/launch.json` con tres configuraciones:
-
-- **"Validate: ML-KEM-768 + liboqs (smoke test)"** — caso de control, debe dar CONFORMANTE.
-- **"Validate: elegir algoritmo y librería"** — menús desplegables para elegir.
-
-Requiere la extensión **Python** de Microsoft. Todas usan `${workspaceFolder}/venv/bin/python` como intérprete y `"justMyCode": false` para poder entrar en código de Click, etc.
+El proyecto no incluye configuración de IDE en el repositorio (`.vscode/` está en `.gitignore`). Para depurar con VS Code, crea tu propio `.vscode/launch.json` con módulo `src.cli`, `args` a tu gusto (`["validate", "-a", "ML-KEM-768", "-l", "liboqs"]`), el intérprete del `venv` y `"justMyCode": false` si quieres entrar en el código de Click. Alternativamente, `python -m pdb -m src.cli validate -a ML-KEM-768 -l liboqs`.
 
 **Buenos puntos para breakpoints:**
 - `src/cli.py:129` — punto donde arranca el pipeline (`orchestrator.validate(...)`).
-- `src/pipeline.py:168` — bucle principal de validación; cada iteración es un test case.
-- `src/harness.py:113` — `Harness.run`: aquí se prepara la semilla y se lanza el subproceso.
-- `src/pipeline.py:95` — `compare_case`: aquí se compara byte a byte.
+- `src/pipeline.py:164` — bucle principal de validación; cada iteración es un test case.
+- `src/harness.py:105` — `Harness.run`: aquí se prepara la semilla y se lanza el subproceso.
+- `src/pipeline.py:91` — `compare_case`: aquí se compara byte a byte.
 
 ### 8.3. Limitación: no se puede depurar el código C desde el debugger Python
 
@@ -793,8 +789,8 @@ Los harnesses C corren en subprocesos separados (`subprocess.run`). El debugger 
 Para inspeccionar un test case concreto fuera del pipeline Python:
 
 ```bash
-# 1. Escribir la semilla del KAT en un fichero
-echo -n "d_hex_value" | xxd -r -p > /tmp/seed.bin
+# 1. Escribir la semilla del KAT en un fichero (KEM keyGen: d ‖ z)
+echo -n "d_hex_value" | xxd -r -p >  /tmp/seed.bin
 echo -n "z_hex_value" | xxd -r -p >> /tmp/seed.bin
 
 # 2. Lanzar el harness con LD_PRELOAD apuntando a libkat_entropy.so
@@ -811,9 +807,9 @@ La salida tiene formato `EK: <hex>` / `DK: <hex>` y se puede comparar manualment
 
 ### 9.1. Añadir un nuevo algoritmo soportado
 
-1. **`src/parser.py`** — añadir el nombre al `frozenset` correspondiente (`KEM_ALGORITHMS`, `MLDSA_ALGORITHMS` o `SLHDSA_ALGORITHMS`).
+1. **`src/parser.py`** — añadir el nombre al conjunto correspondiente (`KEM_ALGORITHMS`, `MLDSA_ALGORITHMS` o `SLHDSA_ALGORITHMS`).
 2. **Vectores ACVP** — confirmar que están en `kat_vectors/<modo>-FIPSxxx/internalProjection.json` con `parameterSet == <nombre>`. Si no, ampliar `_ACVP_DIRS_*` y `scripts/fetch_kats.sh`.
-3. **liboqs** — si el nombre interno difiere del ACVP, añadir entrada a `_LIBOQS_ALG_NAMES` en `src/harness.py`.
+3. **liboqs** — si el nombre interno difiere del ACVP, añadir el mapeo en `_args` de `src/harness.py` (como el de SLH-DSA).
 4. **PQClean y pq-crystals** — añadir llamadas a `compile_kem` / `compile_sig` en los scripts `build_*.sh` con los tamaños y prefijos correctos.
 5. Recompilar y validar.
 
@@ -821,7 +817,7 @@ La salida tiene formato `EK: <hex>` / `DK: <hex>` y se puede comparar manualment
 
 1. **`src/harness.py`** — añadir el identificador a `LIBRARIES` y, en `Harness.__init__`, definir la convención de rutas (`_BUILD / "miLib" / algorithm` u otra).
 2. **Harness C** — escribir `kem_harness.c` y/o `sig_harness.c` en `native/<libreria>/` con la API de la nueva librería. Si la API coincide con la de PQClean (3 funciones, sin ctx), reutilizar el genérico parametrizando con `-D`.
-3. **Script de build** — crear `scripts/build_<libreria>.sh` siguiendo el patrón de `build_pqclean.sh`.
+3. **Script de build** — crear `scripts/build_<libreria>.sh` siguiendo el patrón de `build_pqclean.sh` (lo recogerá automáticamente `python -m src.cli build`, que ejecuta todos los `build_*.sh`).
 4. **Validación** — el CLI ya admite cualquier valor presente en `LIBRARIES` sin más cambios.
 
 ### 9.3. Añadir un nuevo formato de informe
@@ -840,7 +836,7 @@ La salida tiene formato `EK: <hex>` / `DK: <hex>` y se puede comparar manualment
 | **DSA** | Digital Signature Algorithm. En este proyecto, FIPS 204 (ML-DSA) y FIPS 205 (SLH-DSA). |
 | **Entropía** | Aleatoriedad criptográfica que un algoritmo consume del sistema operativo. |
 | **FIPS** | Federal Information Processing Standards. Estándares publicados por el NIST. |
-| **Harness** | Programa puente C que recibe instrucciones por stdin/argv y llama a una librería criptográfica. |
+| **Harness** | Programa puente C que recibe instrucciones por argv y llama a una librería criptográfica. |
 | **KAT** | Known Answer Test. Pareja entrada/salida determinista publicada como referencia. |
 | **KEM** | Key Encapsulation Mechanism. Esquema para que dos partes acuerden una clave secreta. FIPS 203 (ML-KEM). |
 | **LD_PRELOAD** | Variable de entorno de Linux que fuerza al loader dinámico a buscar símbolos en una librería compartida nuestra antes que en las del sistema. |
@@ -857,4 +853,4 @@ La salida tiene formato `EK: <hex>` / `DK: <hex>` y se puede comparar manualment
 
 ---
 
-*Última actualización: 2026-05-25.*
+*Última actualización: 2026-07-05.*
